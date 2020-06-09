@@ -10,31 +10,27 @@ package tag
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/yutopp/go-amf0"
 	"io"
 	"io/ioutil"
+
+	"github.com/pkg/errors"
+	"github.com/yutopp/go-amf0"
+
+	"github.com/yutopp/go-flv/pool"
 )
 
 func DecodeFlvTag(r io.Reader, flvTag *FlvTag) (err error) {
-	ui32 := make([]byte, 4)
-	buf := make([]byte, 11)
-	if _, err := io.ReadAtLeast(r, buf, 1); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+
+	if _, err := io.CopyN(buffer, r, 11); err != nil {
 		return err
 	}
 
-	tagType := TagType(buf[0])
-
-	copy(ui32[1:], buf[1:4]) // 24bits
-	dataSize := binary.BigEndian.Uint32(ui32)
-
-	copy(ui32[1:], buf[4:7]) // lower 24bits
-	ui32[0] = buf[7]         // upper  8bits
-	timestamp := binary.BigEndian.Uint32(ui32)
-
-	copy(ui32[1:], buf[8:11])
-	ui32[0] = 0 // clear upper 8bits (not used)
-	streamID := binary.BigEndian.Uint32(ui32)
+	tagType := TagType(buffer.Bytes()[0])
+	dataSize := uint32(buffer.Bytes()[1])<<16 | uint32(buffer.Bytes()[2])<<8 | uint32(buffer.Bytes()[3])
+	timestamp := uint32(buffer.Bytes()[4])<<16 | uint32(buffer.Bytes()[5])<<8 | uint32(buffer.Bytes()[6]) | uint32(buffer.Bytes()[7])<<24
+	streamID := uint32(buffer.Bytes()[8])<<16 | uint32(buffer.Bytes()[9])<<8 | uint32(buffer.Bytes()[10])
 
 	*flvTag = FlvTag{
 		TagType:   tagType,
@@ -79,15 +75,16 @@ func DecodeFlvTag(r io.Reader, flvTag *FlvTag) (err error) {
 }
 
 func DecodeAudioData(r io.Reader, audioData *AudioData) error {
-	buf := make([]byte, 1)
-	if _, err := io.ReadAtLeast(r, buf, 1); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+	if _, err := io.CopyN(buffer, r, 1); err != nil {
 		return err
 	}
 
-	soundFormat := SoundFormat(buf[0] & 0xf0 >> 4) // 0b11110000
-	soundRate := SoundRate(buf[0] & 0x0c >> 2)     // 0b00001100
-	soundSize := SoundSize(buf[0] & 0x02 >> 1)     // 0b00000010
-	soundType := SoundType(buf[0] & 0x01)          // 0b00000001
+	soundFormat := SoundFormat(buffer.Bytes()[0] & 0xf0 >> 4) // 0b11110000
+	soundRate := SoundRate(buffer.Bytes()[0] & 0x0c >> 2)     // 0b00001100
+	soundSize := SoundSize(buffer.Bytes()[0] & 0x02 >> 1)     // 0b00000010
+	soundType := SoundType(buffer.Bytes()[0] & 0x01)          // 0b00000001
 
 	*audioData = AudioData{
 		SoundFormat: soundFormat,
@@ -112,12 +109,13 @@ func DecodeAudioData(r io.Reader, audioData *AudioData) error {
 }
 
 func DecodeAACAudioData(r io.Reader, aacAudioData *AACAudioData) error {
-	buf := make([]byte, 1)
-	if _, err := io.ReadAtLeast(r, buf, 1); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+	if _, err := io.CopyN(buffer, r, 1); err != nil {
 		return err
 	}
 
-	aacPacketType := AACPacketType(buf[0])
+	aacPacketType := AACPacketType(buffer.Bytes()[0])
 
 	*aacAudioData = AACAudioData{
 		AACPacketType: aacPacketType,
@@ -128,13 +126,14 @@ func DecodeAACAudioData(r io.Reader, aacAudioData *AACAudioData) error {
 }
 
 func DecodeVideoData(r io.Reader, videoData *VideoData) error {
-	buf := make([]byte, 1)
-	if _, err := io.ReadAtLeast(r, buf, 1); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+	if _, err := io.CopyN(buffer, r, 1); err != nil {
 		return err
 	}
 
-	frameType := FrameType(buf[0] & 0xf0 >> 4) // 0b11110000
-	codecID := CodecID(buf[0] & 0x0f)          // 0b00001111
+	frameType := FrameType(buffer.Bytes()[0] & 0xf0 >> 4) // 0b11110000
+	codecID := CodecID(buffer.Bytes()[0] & 0x0f)          // 0b00001111
 
 	*videoData = VideoData{
 		FrameType: frameType,
@@ -157,15 +156,14 @@ func DecodeVideoData(r io.Reader, videoData *VideoData) error {
 }
 
 func DecodeAVCVideoPacket(r io.Reader, avcVideoPacket *AVCVideoPacket) error {
-	buf := make([]byte, 4)
-	if _, err := io.ReadAtLeast(r, buf, 4); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+	if _, err := io.CopyN(buffer, r, 4); err != nil {
 		return err
 	}
 
-	avcPacketType := AVCPacketType(buf[0])
-	ctBin := make([]byte, 4)
-	copy(ctBin[0:3], buf[1:4])
-	compositionTime := int32(binary.BigEndian.Uint32(ctBin)) >> 8 // Signed Interger 24 bits. TODO: check
+	avcPacketType := AVCPacketType(buffer.Bytes()[0])
+	compositionTime := int32(binary.BigEndian.Uint32(buffer.Bytes()[1:])) >> 8 // Signed Interger 24 bits. TODO: check
 
 	*avcVideoPacket = AVCVideoPacket{
 		AVCPacketType:   avcPacketType,

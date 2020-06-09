@@ -8,9 +8,10 @@
 package tag
 
 import (
-	"github.com/yutopp/go-amf0"
 	"io"
 	"io/ioutil"
+
+	"github.com/yutopp/go-amf0"
 )
 
 // ========================================
@@ -139,6 +140,7 @@ const (
 	CodecIDOn2VP6WithAlphaChannel         = 5
 	CodecIDScreenVideoVersion2            = 6
 	CodecIDAVC                            = 7
+	CodecIDHEVC                           = 12
 )
 
 type VideoData struct {

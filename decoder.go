@@ -11,10 +11,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 
+	"github.com/pkg/errors"
+
+	"github.com/yutopp/go-flv/pool"
 	"github.com/yutopp/go-flv/tag"
 )
 
@@ -77,12 +79,14 @@ tagSize:
 }
 
 func (dec *Decoder) decodeTagSize() (uint32, error) {
-	buf := make([]byte, 4)
-	if _, err := io.ReadAtLeast(dec.r, buf, len(buf)); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+
+	if _, err := io.CopyN(buffer, dec.r, 4); err != nil {
 		return 0, err
 	}
 
-	return binary.BigEndian.Uint32(buf), nil
+	return binary.BigEndian.Uint32(buffer.Bytes()), nil
 }
 
 func (dec *Decoder) skipTagSize() {
@@ -91,25 +95,27 @@ func (dec *Decoder) skipTagSize() {
 }
 
 func DecodeFlvHeader(r io.Reader) (*Header, error) {
-	buf := make([]byte, HeaderLength)
-	if _, err := io.ReadAtLeast(r, buf, len(buf)); err != nil {
+	buffer := pool.GetBuffer()
+	defer pool.PutBuffer(buffer)
+
+	if _, err := io.CopyN(buffer, r, int64(HeaderLength)); err != nil {
 		return nil, err
 	}
 
-	signature := buf[0:3]
+	signature := buffer.Bytes()[0:3]
 	if !bytes.Equal(signature, HeaderSignature) {
 		return nil, fmt.Errorf("Signature is not matched(FLV): %+v", signature)
 	}
 
-	version := buf[3]
+	version := buffer.Bytes()[3]
 
-	flags := buf[4]
+	flags := buffer.Bytes()[4]
 	//flagsReserved = (flags & 0xf8) >> 3 // 0b11111000
 	flagsAudio := (flags & 0x03) >> 2 // 0b00000100
 	//flagsReserved2 := (flags & 0x02) >> 1 // 0b00000010
 	flagsVideo := (flags & 0x01) // 0b00000001
 
-	dataOffset := binary.BigEndian.Uint32(buf[5:9])
+	dataOffset := binary.BigEndian.Uint32(buffer.Bytes()[5:9])
 
 	header := &Header{
 		Version:    version,
